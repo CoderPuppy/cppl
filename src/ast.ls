@@ -12,9 +12,9 @@ A =
 	kv: (key, value) -> new A.KeyValue(key, value)
 
 class A.MessageSeq
-	(@msgs = []) -> throw new Error('where?') unless @msgs instanceof Array
+	(@msgs = []) -> throw new Error('Non-array messages') unless @msgs instanceof Array
 	inspect: ->
-		@msgs.map(-> util.inspect(it)).join(' ')
+		"{ #{@msgs.map(-> util.inspect(it)).join(' ')} }"
 
 class A.Message
 	(@id, @args = []) ->
