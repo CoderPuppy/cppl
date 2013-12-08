@@ -1,0 +1,18 @@
+# Line Comment
+/# Block Comment #/
+
+# Default value, Tuple
+Message = (User = node:user, Text)
+User = struct {
+	name: String
+}
+
+node:user = User {
+	name = 'Test User'
+}
+
+users = new Array[User]
+
+messages = new Array[Message]
+
+messages << Message("hello")

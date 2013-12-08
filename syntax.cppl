@@ -1,0 +1,11 @@
+hi # => <ground> :hi
+[ 1, 2, 3 ] # => <ground> [](1, 2, 3)
+123 # => <ground> 123
+"test" => <ground> "test"
+
+# line comment
+/# block comment #/
+
+write('Name: ')
+name = read
+print('Hello, #{name}!')
