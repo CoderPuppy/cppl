@@ -85,12 +85,13 @@ P =
 			->
 				M.value(A.msg(A.id(\internal:createSymbol), [A.msg-seq([A.msg(it)])]))
 		), 'symbol'
-	array: -> M.label M.bind(
-		M.between(M.and(M.string(\[), T.i!), M.and(T.i!, M.string(\])), M.delay(P.message-list)), -> M.value(A.msg(A.id('[]'), it))
-	), 'array'
-	map: -> M.label M.bind(
+	array: -> M.label M.unless(M.string('[]'), M.bind(
+		M.between(M.and(M.string(\[), T.i!), M.and(T.i!, M.string(\])), M.delay(P.message-list)),
+		-> M.value(A.msg(A.id('[]'), it))
+	)), 'array'
+	map: -> M.label M.unless(M.string('{}'), M.bind(
 		M.between(M.and(M.string(\{), T.i!), M.and(T.i!, M.string(\})), M.delay(P.message-list)), -> M.value(A.msg(A.id('{}'), it))
-	), 'map'
+	)), 'map'
 
 	args: (needed = false) ->
 		parser = M.between(M.string(\(), M.string(\)), P.message-list!)
