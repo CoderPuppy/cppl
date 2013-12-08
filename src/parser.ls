@@ -14,10 +14,11 @@ A = require \./ast
 T =
 	id: -> M.label M.bind(
 		# special case {} and [] so they can be sent directly
-		M.string-of(M.or(
-			M.string('{}'), M.string('[]'),
-			M.collect(M.none-of([ \., \,, ' ', \", \', \(, \), \[, \], \{, \}, '\n', '\r', '\t', \# ]), min: 1)
-		)), -> M.value(A.id(it))
+		M.or(M.string('{}'), M.string('[]'),
+			M.string-of(
+				M.collect(M.none-of([ \., \,, ' ', \", \', \(, \), \[, \], \{, \}, '\n', '\r', '\t', \# ]), min: 1)
+			)
+		), -> M.value(A.id(it))
 	), 'identifier'
 	sep: -> M.label M.bind(T.i!, -> if it.length > 0 then M.value(it) else M.fail('expected seperator')), 'seperator'
 	ws: -> M.label M.collect(M.or(M.string(' '), M.string('\t'), M.string('\n'), M.string('\r'))), 'whitespace'
