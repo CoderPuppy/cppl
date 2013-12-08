@@ -12,7 +12,7 @@ shuffle-assignment = (seq) ->
 
 		if msg.id.data == '=' and msg.args.length == 0
 			throw new Error('Assignment cannot be the first message') unless current!.length?
-			new-msg.args[0] = current!.pop!
+			new-msg.args[0] = A.msg-seq([ current!.pop! ])
 			new-msg.args[1] = A.msg-seq!
 			current!.push new-msg
 			stack.push new-msg.args[1].msgs
