@@ -1,39 +1,58 @@
-util = require \util
+require! {
+	U: \./userdata
+	P: \./primitives
+	util
+}
 
-# AST
-A =
-	# msg: (id, args) -> [ \msg, id, args ]
-	# id: (id) -> [ \id, id ]
-	# str: (str) -> [ \str, str ]
-	msg-seq: (msgs) -> new A.MessageSeq(msgs)
-	msg: (id, args) -> new A.Message(id, args)
-	str: (str) -> new A.String(str)
-	id: (id) -> new A.ID(id)
-	kv: (key, value) -> new A.KeyValue(key, value)
+A = exports
 
-class A.MessageSeq
-	(@msgs = []) -> throw new Error('Non-array messages') unless @msgs instanceof Array
+class A.MsgSeq extends U.UserData
+	(...@msgs) ~>
+
+	add: (msg) ->
+		@msgs.push msg
+		this
+
 	inspect: ->
-		"{ #{@msgs.map(-> util.inspect(it)).join(' ')} }"
+		'{ ' + @msgs.map util.inspect(_) .join(' ') + ' }'
 
-class A.Message
-	(@id, @args = []) ->
+	to-code: ->
+		@msgs.map (.to-code!) .join(' ')
+
+	dup: -> new @@ ...@msgs.map (.dup!)
+
+A.msg-seq = MsgSeq
+
+class A.Msg extends U.UserData
+	(@id, @args = [], @pos = {chunk: '<runtime>', line: 1, column: 1, char: 1}) ~>
+
 	inspect: ->
-		str = "#{util.inspect(@id)}"
-		if @args.length > 0
-			str += "(#{@args.map(-> util.inspect(it)).join(', ')})"
+		str = util.inspect(@id, colors: true) + '(' + util.inspect(@args, colors: true) + ')'
+
+		if @pos?
+			str += " at #{@pos.chunk}:#{@pos.line}:#{@pos.column}"
+
 		str
 
-class A.ID
-	(@data) ->
-	inspect: -> @data
+	to-code: ->
+		str = @id.to-code!
+		if str == '()'
+			str = ''
+		if @args.length > 0
+			str += '(' + @args.map (.to-code!) .join(', ') + ')'
+		str
 
-class A.String
-	(@data) ->
-	inspect: -> util.inspect(@data)
+	dup: -> new @@ @id.dup!, @args.map((.dup!)), {} <<< @pos
 
-class A.KeyValue
-	(@key, @value) ->
-	inspect: -> "#{util.inspect(@key)} = #{util.inspect(@value)}"
+A.msg = Msg
 
-module.exports = A
+class A.Comment extends U.UserData
+	(@contents, @multiline = true) ~>
+
+	inspect: ->
+		if @multiline
+			"/##{@contents}#/"
+		else
+			"##{@contents}"
+
+	to-code: -> @inspect!

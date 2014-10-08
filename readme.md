@@ -1,6 +1,11 @@
-# CPPL
-__CoderPuppy Programming Language__
+# Poland
 
-__TODO: Better name__
+Distributed -- once i get ddb working
 
-Distributed
+## TODO:
+- Fix string parsing (\\ => \\, \" => ", \' => ', \n => \n) ✓ UNTESTED
+- Add syntatic sugar for functions, ifs and loops
+- Implement functions WIP
+- Map (hat for objects, custom id for everything else) ✓ UNTESTED
+
+.pd

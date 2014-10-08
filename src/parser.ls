@@ -1,121 +1,137 @@
-M = require \mona-parser
+require! {
+	A: \./ast
+	P: \./primitives
+	util
+}
 
-# Utils
-U =
-	joined: (joiner, part) ->
-		M.sequence (s) ->
-			first = s part
-			rest = s M.collect(M.and(joiner, part))
-			M.value [first].concat(rest)
+class Parser
+	(chunk-name = '<runtime>') ~>
+		@str = ''
+		@seq = new A.MsgSeq
+		@path = [@seq]
+		@current = @seq
+		@prev = ''
+		@pos = {
+			char: 1
+			column: 1
+			line: 1
+			chunk: chunk-name
+		}
 
-A = require \./ast
+	add: (str) ->
+		@str += str
 
-# Tokenizer
-T =
-	id: -> M.label M.bind(
-		# special case {} and [] so they can be sent directly
-		M.or(M.string('{}'), M.string('[]'),
-			M.string-of(
-				M.collect(M.none-of([ \., \,, ' ', \", \', \(, \), \[, \], \{, \}, '\n', '\r', '\t', \# ]), min: 1)
-			)
-		), -> M.value(A.id(it))
-	), 'identifier'
-	sep: -> M.label M.bind(T.i!, -> if it.length > 0 then M.value(it) else M.fail('expected seperator')), 'seperator'
-	ws: -> M.label M.collect(M.or(M.string(' '), M.string('\t'), M.string('\n'), M.string('\r'))), 'whitespace'
-	i: -> M.label M.or(M.string-of(M.collect(M.between(T.ws!, T.ws!, T.comment!), min: 1)), T.ws!), 'ignored'
-	comment: -> M.or(T.line-comment!, T.block-comment!)
-	line-comment: ->
-		M.label M.sequence((s) ->
-			str = ''
-			str += s M.string(\#)
-			str += s M.string-of(M.collect(M.none-of(['\n', '\r'])))
-			str += s M.or(M.collect(M.or(M.string('\n'), M.string('\r')), min: 1, max: 2), M.eof!)
-			M.value(str)
-		), 'line comment'
-	block-comment: -> M.label M.sequence((s) ->
-		str = ''
-		str += s M.string('/#')
-		str += s M.string-of(M.collect(M.or(M.none-of([ '/#', '#/' ]), T.block-comment!)))
-		str += s M.string('#/')
-		M.value str
-	), 'block comment'
-	string: -> M.label M.sequence((s) ->
-		quote = s M.or(M.string(\"), M.string(\'))
-		contents = s M.string-of(M.collect(M.or(M.string("\\#{quote}"), M.none-of([ quote ]))))
-		s M.string(quote)
-		M.value(A.str(contents))
-	), 'string'
+	_last-of: (kind, barrier) ->
+		for i from @path.length - 1 to 0 by -1
+			if @path[i] == barrier or (typeof(barrier) == \function and @path[i] instanceof barrier)
+				break
 
-# Parser
-P =
-	start: ->
-		M.between(
-			T.i!,
-			T.i!,
-			M.or(P.message-seq!, M.value(A.msg-seq!))
-		)
+			if @path[i] == kind or (typeof(kind) == \function and @path[i] instanceof kind)
+				return @path[i]
 
-	message-seq: -> M.label M.sequence((s) ->
-		first = s P.message!
-		rest = s M.collect(P.rest-message!)
-		M.value(A.msg-seq([first].concat(rest)))
-	), 'message sequence'
+	_push: (o) ->
+		@path.push o
+		@current = o
+		o
 
-	rest-message: -> M.label M.or(M.and(T.sep!, P.message!), P.reset-message!, P.apply-message!), 'rest message'
+	_pop-to-last-of: (kind) ->
+		for i from @path.length - 1 to 0 by -1
+			if @path[i] == kind or (typeof(kind) == \function and @path[i] instanceof kind)
+				return @path[i]
 
-	reset-message: -> M.label M.bind(
-		M.string(\.),
-		-> M.value(A.msg(A.id(\.)))
-	), 'reset message'
-	apply-message: -> M.label M.bind(
-		P.args(true),
-		-> M.value(A.msg(A.id(\apply), it))
-	), 'apply message'
+			@_pop!
 
-	message: -> M.label M.or(P.sugar!, P.reset-message!, P.apply-message!, M.sequence((s) ->
-		id = s M.or(T.id!, T.string!)
-		args = s P.args!
-		M.value A.msg(id, args)
-	)), 'message'
+	_pop: ->
+		@path.pop!
+		@current = @path[@path.length - 1]
 
-	sugar: -> M.or(P.symbol!, P.array!, P.map!)
-	symbol: ->
-		M.label M.bind(
-			M.and(M.string(\:), T.id!),
-			->
-				M.value(A.msg(A.id(\internal:createSymbol), [A.msg-seq([A.msg(it)])]))
-		), 'symbol'
-	array: -> M.label M.unless(M.string('[]'), M.bind(
-		M.between(M.and(M.string(\[), T.i!), M.and(T.i!, M.string(\])), M.delay(P.message-list)),
-		-> M.value(A.msg(A.id('[]'), it))
-	)), 'array'
-	map: -> M.label M.unless(M.string('{}'), M.bind(
-		M.between(M.and(M.string(\{), T.i!), M.and(T.i!, M.string(\})), M.delay(P.message-list)), -> M.value(A.msg(A.id('{}'), it))
-	)), 'map'
+	_pull-char: ->
+		@pos.char += 1
+		@pos.column += 1
 
-	args: (needed = false) ->
-		parser = M.between(M.string(\(), M.string(\)), P.message-list!)
-		if needed
-			parser
-		else
-			M.or(parser, M.value([]))
+		if @str[0] == '\n' or @str[0] == '\r'
+			@pos.column = 0
+			@pos.line += 1
 
-	message-list: -> M.or(U.joined(M.and(M.string(\,), T.i!), P.message-seq!), M.and(T.i!, M.value([])))
+		@prev = @str[0] # + @prev # Re-enable if neccessary
 
-# Unnessecary
-# # Keyword args
-# M.sequence((s) ->
-# 	key = s T.id!
-# 	s T.i!
-# 	s M.string(\:)
-# 	s T.i!
-# 	val = s P.message-seq!
-# 	M.value(A.kv(key, val))
-# )
+		@str .= substr(1)
 
-exports.parser = P
-exports.tokenizer = T
+	_reprocess-char: ->
+		@str = ' ' + @str
+		@pos.char -= 1
+		@pos.column -= 1
 
-parse = (txt) -> M.parse(P.start!, txt)
+	parse: ->
+		while @str.length > 0
+			# Comments
+			if @current instanceof A.Comment
+				if @current.multiline and @str.substr(0, 2) == '#/'
+					@_pull-char!
+					@_pop!
+				else if not @current.multiline and (@str[0] == '\n' or @str[0] == '\r')
+					@_pop!
+				else
+					@current.contents += @str[0]
 
-exports.parse = parse
+			else if @str[0] == '#'
+				@_push A.Comment('', false)
+
+			else if @str.substr(0, 2) == '/#'
+				@_push A.Comment('')
+				@_pull-char!
+
+			# Arguments
+			else if Array.isArray(@current)
+				@_reprocess-char!
+				seq = A.msg-seq!
+				@current.push seq
+				@_push(seq)
+
+			# Symbol
+			else if (@current instanceof P.Symbol or @current instanceof A.MsgSeq) and @_last-of(A.MsgSeq)? and (@prev[0] == \\ or @str-quote == @str[0] or @str-quote? or not /^[ \t\n\r\(\)\[\]]/.test(@str[0]))
+				if @current not instanceof P.Symbol
+					id = P.sym('')
+					msg = A.msg(id, [], {} <<< @pos)
+					@_push(msg)
+					@_push(id)
+					@_last-of(A.MsgSeq).add(msg)
+
+				@current.val += @str[0]
+
+				if @str-quote == @str[0] and @prev[0] != \\
+					delete! @str-quote
+				else if @str[0] == \" or @str[0] == \'
+					@str-quote = @str[0]
+
+			# Message Seperators
+			else if (@str[0] == ' ' or @str[0] == '\t') and @_last-of(A.MsgSeq)?
+				@_pop-to-last-of A.MsgSeq
+
+			# Arguments
+			else if @str[0] == '(' and @_last-of(A.Msg)?
+				@_push @_pop-to-last-of(A.Msg).args
+
+			else if @str[0] == '(' and @_last-of(A.MsgSeq)?
+				msg = A.msg(P.sym('()'), [], {} <<< @pos)
+				@_last-of(A.MsgSeq).add(msg)
+				@_push @_push(msg).args
+
+			else if @str[0] == ')' and @_last-of(Array)?
+				@_pop-to-last-of(Array)
+				@_pop!
+				@_pop!
+
+			else if @str[0] == ',' and @_last-of(Array)?
+				@_pop-to-last-of(Array)
+
+			# Newline
+			else if (@str[0] == '\n' or @str[0] == '\r') and @current instanceof A.MsgSeq
+				@current.add(A.msg(P.sym(\.), [], {} <<< @pos))
+
+			else
+				throw new Error("Unexpected '#{@str[0]}' at line #{@pos.line}, column #{@pos.column} (char #{@pos.char})")
+
+			@_pull-char!
+
+module.exports = Parser
